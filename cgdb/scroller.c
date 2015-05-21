@@ -287,6 +287,37 @@ void scr_move(struct scroller *scr, int pos_r, int pos_c, int height, int width)
     wclear(scr->win);
 }
 
+int get_line_height(char* line, int width)
+{
+	char* current_char = line;
+	int length = 0;
+	while(*current_char!='\0')
+	{
+		if(*current_char == '[')
+		{
+			char* escape_char = current_char + 1;
+			int i;
+			for(i=0; *current_char && i<2; ++i)
+			{
+				strtol(escape_char, &escape_char, 10);
+				if(*escape_char == ';')
+					escape_char++;
+			}
+			if(*escape_char == 'm') // We have a format sequence so don't include
+			{
+				current_char = escape_char + 1;
+				continue;
+			}
+		}
+		length++;
+		current_char++;
+	}
+	int height = 1;
+	while((length -= width) > 0)
+		++height;
+	return height;
+}
+
 void scr_refresh(struct scroller *scr, int focus)
 {
 	int length;                 /* Length of current line */
@@ -306,87 +337,99 @@ void scr_refresh(struct scroller *scr, int focus)
 	/* Start drawing at the bottom of the viewable space, and work our way up */
 	int pair_no = 100;
 	int cursor_col = 0;
-	for (nlines = 1; nlines <= height; nlines++) {
-		/* Print the current line [segment] */
-		wmove(scr->win, height-nlines, 0);
-		wclrtoeol(scr->win);
-		if (row >= 0) {
-			int total_length = 0;
-			char* segment_start = scr->buffer[row];
-			char* segment_end = NULL;
-			char* line_end = segment_start + strlen(scr->buffer[row]);
-			while(segment_start < line_end)
-			{
-				char* pch=strchr(segment_start+1, '[');
-				if(pch==NULL)
-					segment_end = line_end;
-				else
-					segment_end = pch;
-
-				int attributes = A_NORMAL;
-				int foreground = -1;
-				int background = -1;
-				char* current_char = segment_start;
-				if(*current_char == '[')
-				{
-					current_char++;
-					int code[] = {0, 0};
-					int i;
-					for(i=0; *current_char && i<2; ++i)
-					{
-						code[i] = strtol(current_char, &current_char, 10);
-						if(*current_char == ';')
-							current_char++;
-					}
-					if(*current_char == 'm') // We have a format sequence
-					{
-						for(i=0; i<2; ++i)
-						{
-							if(code[i] <= 8)
-								attributes |= code[i];
-							else if(code[i] >= 30 && code[i] <= 37)
-								foreground = code[i] % 10;
-							else if(code[i] >= 40 && code[i] <= 47)
-								background = code[i] % 10;
-							else if(code[i] >= 90 && code[i] <= 97)
-							{
-								foreground = code[i] % 10;
-								attributes |= A_BOLD;
-							}
-							else if(code[i] >= 100 && code[i] <= 107)
-							{
-								background = code[i] % 10;
-								attributes |= A_BOLD;
-							}
-						}
-						current_char++;
-						segment_start = current_char;
-					}
-				}
-
-				int segment_length = segment_end - segment_start;
-
-				buffer = malloc(segment_length+1);
-				buffer[segment_length] = 0;
-				memset(buffer, ' ', segment_length);
-				memcpy(buffer, segment_start, segment_length);
-
-				init_pair(++pair_no, foreground, background);
-				int attrs = COLOR_PAIR(pair_no) | attributes;
-
-				wattron(scr->win, attrs);
-				wprintw(scr->win, "%s", buffer);
-				wattroff(scr->win, attrs);
-
-				total_length += segment_length;
-				scr->current.c = total_length;
-				segment_start = segment_end;
-				free(buffer);
-			}
-			if(nlines == 1)
-				cursor_col = total_length;
-			row--;
+	nlines = 1;
+	while(nlines <= height)
+	{
+		if(row < 0)
+		{
+			wmove(scr->win, height-nlines, 0);
+			wclrtoeol(scr->win);
+			nlines++;
+			continue;
 		}
+		int line_height = get_line_height(scr->buffer[row], width);
+		int clear_line;
+		for(clear_line = 0; clear_line < line_height; ++clear_line)
+		{
+			wmove(scr->win, height-nlines-clear_line, 0);
+			wclrtoeol(scr->win);
+		}
+		int total_length = 0;
+		char* segment_start = scr->buffer[row];
+		char* segment_end;
+		char* line_end = segment_start + strlen(scr->buffer[row]);
+		while(segment_start < line_end)
+		{
+			char* pch=strchr(segment_start+1, '[');
+			if(pch==NULL)
+				segment_end = line_end;
+			else
+				segment_end = pch;
+
+			int attributes = A_NORMAL;
+			int foreground = -1;
+			int background = -1;
+			char* current_char = segment_start;
+			if(*current_char == '[')
+			{
+				current_char++;
+				int color_code[] = {0, 0};
+				int i;
+				for(i=0; *current_char && i<2; ++i)
+				{
+					color_code[i] = strtol(current_char, &current_char, 10);
+					if(*current_char == ';')
+						current_char++;
+				}
+				if(*current_char == 'm') // We have a format sequence
+				{
+					for(i=0; i<2; ++i)
+					{
+						if(color_code[i] <= 8)
+							attributes |= color_code[i];
+						else if(color_code[i] >= 30 && color_code[i] <= 37)
+							foreground = color_code[i] % 10;
+						else if(color_code[i] >= 40 && color_code[i] <= 47)
+							background = color_code[i] % 10;
+						else if(color_code[i] >= 90 && color_code[i] <= 97)
+						{
+							foreground = color_code[i] % 10;
+							attributes |= A_BOLD;
+						}
+						else if(color_code[i] >= 100 && color_code[i] <= 107)
+						{
+							background = color_code[i] % 10;
+							attributes |= A_BOLD;
+						}
+					}
+					current_char++;
+					segment_start = current_char;
+				}
+			}
+
+			int segment_length = segment_end - segment_start;
+
+			buffer = malloc(segment_length+1);
+			buffer[segment_length] = 0;
+			memset(buffer, ' ', segment_length);
+			memcpy(buffer, segment_start, segment_length);
+
+			init_pair(++pair_no, foreground, background);
+			int attrs = COLOR_PAIR(pair_no) | attributes;
+
+			wattron(scr->win, attrs);
+			wprintw(scr->win, "%s", buffer);
+			wattroff(scr->win, attrs);
+
+			total_length += segment_length;
+			scr->current.c = total_length;
+			segment_start = segment_end;
+			free(buffer);
+		}
+		if(nlines == 1)
+			cursor_col = total_length % width;
+		row--;
+		nlines += line_height;
 	}
 
 	length = strlen(scr->buffer[scr->current.r] + scr->current.c);
