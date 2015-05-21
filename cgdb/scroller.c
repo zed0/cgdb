@@ -289,59 +289,115 @@ void scr_move(struct scroller *scr, int pos_r, int pos_c, int height, int width)
 
 void scr_refresh(struct scroller *scr, int focus)
 {
-    int length;                 /* Length of current line */
-    int nlines;                 /* Number of lines written so far */
-    int r;                      /* Current row in scroller */
-    int c;                      /* Current column in row */
-    int width, height;          /* Width and height of window */
-    char *buffer;               /* Current line segment to print */
+	int length;                 /* Length of current line */
+	int nlines;                 /* Number of lines written so far */
+	int row;                    /* Current row in scroller */
+	int width, height;          /* Width and height of window */
+	char *buffer;               /* Current line segment to print */
 
-    /* Sanity check */
-    getmaxyx(scr->win, height, width);
+	/* Sanity check */
+	getmaxyx(scr->win, height, width);
 
-    if (scr->current.c > 0) {
-        if (scr->current.c % width != 0)
-            scr->current.c = (scr->current.c / width) * width;
-    }
-    r = scr->current.r;
-    c = scr->current.c;
-    buffer = malloc(width + 1);
-    buffer[width] = 0;
+	if (scr->current.c > 0) {
+		if (scr->current.c % width != 0)
+			scr->current.c = (scr->current.c / width) * width;
+	}
+	row = scr->current.r;
+	/* Start drawing at the bottom of the viewable space, and work our way up */
+	int pair_no = 100;
+	int cursor_col = 0;
+	for (nlines = 1; nlines <= height; nlines++) {
+		/* Print the current line [segment] */
+		wmove(scr->win, height-nlines, 0);
+		wclrtoeol(scr->win);
+		if (row >= 0) {
+			int total_length = 0;
+			char* segment_start = scr->buffer[row];
+			char* segment_end = NULL;
+			char* line_end = segment_start + strlen(scr->buffer[row]);
+			while(segment_start < line_end)
+			{
+				char* pch=strchr(segment_start+1, '[');
+				if(pch==NULL)
+					segment_end = line_end;
+				else
+					segment_end = pch;
 
-    /* Start drawing at the bottom of the viewable space, and work our way up */
-    for (nlines = 1; nlines <= height; nlines++) {
+				int attributes = A_NORMAL;
+				int foreground = -1;
+				int background = -1;
+				char* current_char = segment_start;
+				if(*current_char == '[')
+				{
+					current_char++;
+					int code[] = {0, 0};
+					int i;
+					for(i=0; *current_char && i<2; ++i)
+					{
+						code[i] = strtol(current_char, &current_char, 10);
+						if(*current_char == ';')
+							current_char++;
+					}
+					if(*current_char == 'm') // We have a format sequence
+					{
+						for(i=0; i<2; ++i)
+						{
+							if(code[i] <= 8)
+								attributes |= code[i];
+							else if(code[i] >= 30 && code[i] <= 37)
+								foreground = code[i] % 10;
+							else if(code[i] >= 40 && code[i] <= 47)
+								background = code[i] % 10;
+							else if(code[i] >= 90 && code[i] <= 97)
+							{
+								foreground = code[i] % 10;
+								attributes |= A_BOLD;
+							}
+							else if(code[i] >= 100 && code[i] <= 107)
+							{
+								background = code[i] % 10;
+								attributes |= A_BOLD;
+							}
+						}
+						current_char++;
+						segment_start = current_char;
+					}
+				}
 
-        /* Print the current line [segment] */
-        memset(buffer, ' ', width);
-        if (r >= 0) {
-            length = strlen(scr->buffer[r] + c);
-            memcpy(buffer, scr->buffer[r] + c, length < width ? length : width);
-        }
-        mvwprintw(scr->win, height - nlines, 0, "%s", buffer);
+				int segment_length = segment_end - segment_start;
 
-        /* Update our position */
-        if (c >= width)
-            c -= width;
-        else {
-            r--;
-            if (r >= 0) {
-                length = strlen(scr->buffer[r]);
-                if (length > width)
-                    c = ((length - 1) / width) * width;
-            }
-        }
-    }
+				buffer = malloc(segment_length+1);
+				buffer[segment_length] = 0;
+				memset(buffer, ' ', segment_length);
+				memcpy(buffer, segment_start, segment_length);
 
-    length = strlen(scr->buffer[scr->current.r] + scr->current.c);
-    if (focus && scr->current.r == scr->length - 1 && length <= width) {
-        /* We're on the last line, draw the cursor */
-        curs_set(1);
-        wmove(scr->win, height - 1, scr->current.pos % width);
-    } else {
-        /* Hide the cursor */
-        curs_set(0);
-    }
+				init_pair(++pair_no, foreground, background);
+				int attrs = COLOR_PAIR(pair_no) | attributes;
 
-    free(buffer);
-    wrefresh(scr->win);
+				wattron(scr->win, attrs);
+				wprintw(scr->win, "%s", buffer);
+				wattroff(scr->win, attrs);
+
+				total_length += segment_length;
+				scr->current.c = total_length;
+				segment_start = segment_end;
+				free(buffer);
+			}
+			if(nlines == 1)
+				cursor_col = total_length;
+			row--;
+		}
+	}
+
+	length = strlen(scr->buffer[scr->current.r] + scr->current.c);
+	if (focus && scr->current.r == scr->length - 1 && length <= width) {
+		/* We're on the last line, draw the cursor */
+		curs_set(1);
+		wmove(scr->win, height - 1, scr->current.pos<cursor_col?scr->current.pos:cursor_col);
+	} else {
+		/* Hide the cursor */
+		curs_set(0);
+	}
+
+	wrefresh(scr->win);
 }
