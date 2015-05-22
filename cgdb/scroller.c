@@ -26,6 +26,7 @@
 
 /* Local Includes */
 #include "cgdb.h"
+#include "cgdbrc.h"
 #include "scroller.h"
 
 /* --------------- */
@@ -293,7 +294,7 @@ int get_line_height(char* line, int width)
 	int length = 0;
 	while(*current_char!='\0')
 	{
-		if(*current_char == '[')
+		if(cgdbrc_get(CGDBRC_ANSI_CODES)->variant.int_val && *current_char == '[')
 		{
 			char* escape_char = current_char + 1;
 			int i;
@@ -370,7 +371,7 @@ void scr_refresh(struct scroller *scr, int focus)
 			int foreground = -1;
 			int background = -1;
 			char* current_char = segment_start;
-			if(*current_char == '[')
+			if(cgdbrc_get(CGDBRC_ANSI_CODES)->variant.int_val && *current_char == '[')
 			{
 				current_char++;
 				int color_code[] = {0, 0};

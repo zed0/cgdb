@@ -61,6 +61,7 @@ static int cgdbrc_set_val(struct cgdbrc_config_option config_option);
  * It is initialized with the default values.
  */
 static struct cgdbrc_config_option cgdbrc_config_options[CGDBRC_WRAPSCAN + 1] = {
+    {CGDBRC_ANSI_CODES, {0}},
     {CGDBRC_ARROWSELECTEDLINE, {0}},
     {CGDBRC_ARROWSTYLE, {ARROWSTYLE_SHORT}},
     {CGDBRC_AUTOSOURCERELOAD, {1}},
@@ -93,6 +94,11 @@ static struct ConfigVariable {
 } VARIABLES[] = {
 
     /* keep this stuff sorted! !sort */
+    /* ansicodes */
+    {
+    "ansicodes", "ansi", CONFIG_TYPE_BOOL,
+                &cgdbrc_config_options[CGDBRC_ANSI_CODES].variant.
+                int_val},
     /* arrowselectedlines */
     {
     "arrowselectedline", "asl", CONFIG_TYPE_BOOL,
